@@ -1,0 +1,34 @@
+[application]
+database = "/var/lib/feedsmith/feedsmith.sqlite3"
+public_dir = "/var/lib/feedsmith/public"
+retention_days = 30
+feed_entries = 500
+# A first installation may use 1; raise this after history has accumulated.
+minimum_entries = 1
+maximum_newest_age_hours = 48
+
+[publishing]
+public_base_url = "https://rss.example.com"
+
+[scraping]
+request_timeout_seconds = 20
+request_delay_seconds = 0.6
+
+[sources.omni]
+enabled = true
+feed_title = "Omni – senaste nyheterna (inofficiell RSS)"
+homepage_url = "https://omni.se/senaste"
+canonical_hosts = ["omni.se"]
+# Source override: possible sources can retain their own history window.
+retention_days = 90
+latest_urls = ["https://omni.se/senaste"]
+# Add every category wanted for coverage. All remain one canonical article record.
+full_urls = ["https://omni.se/", "https://omni.se/ekonomi", "https://omni.se/utrikes"]
+max_candidates_per_url = 50
+
+[sources.omni.feeds]
+all = true
+free = false
+premium = false
+# Future section endpoints are explicit, e.g. ["Ekonomi", "Utrikes"].
+categories = []

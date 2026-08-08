@@ -1,0 +1,15 @@
+[Unit]
+Description=Prune and optimize feedsmith SQLite state
+
+[Service]
+Type=oneshot
+User=feedsmith
+Group=feedsmith
+WorkingDirectory=/srv/feedsmith
+EnvironmentFile=/etc/feedsmith/feedsmith.env
+ExecStart=/srv/feedsmith/.venv/bin/feedsmith maintain --config /etc/feedsmith/config.toml
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/feedsmith

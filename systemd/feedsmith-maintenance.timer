@@ -1,0 +1,11 @@
+[Unit]
+Description=Run daily feedsmith maintenance
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+Unit=feedsmith-maintenance.service
+
+[Install]
+WantedBy=timers.target

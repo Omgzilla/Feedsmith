@@ -3,10 +3,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "omni-rss"
-version = "1.0.3"
-description = "Self-hosted RSS and Atom feed publisher for Omni.se"
-requires-python = ">=3.10"
+name = "feedsmith"
+version = "1.0.4"
+description = "Generic self-hosted RSS and Atom publisher for public web metadata"
+requires-python = ">=3.11"
 dependencies = [
   "beautifulsoup4>=4.12,<5",
   "boto3>=1.34,<2",
@@ -14,10 +14,10 @@ dependencies = [
 ]
 
 [project.scripts]
-omni-rss = "omni_rss.cli:main"
+feedsmith = "feedsmith.cli:main"
 
 [tool.setuptools]
-packages = ["omni_rss"]
+packages = ["feedsmith", "feedsmith.core", "feedsmith.sources"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Omni full coverage discovery every thirty minutes
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+RandomizedDelaySec=60
+Unit=feedsmith-full.service
+
+[Install]
+WantedBy=timers.target

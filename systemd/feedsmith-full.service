@@ -1,0 +1,19 @@
+[Unit]
+Description=Discover Omni homepage and category articles and publish feedsmith feeds
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=feedsmith
+Group=feedsmith
+WorkingDirectory=/srv/feedsmith
+EnvironmentFile=/etc/feedsmith/feedsmith.env
+ExecStartPre=/srv/feedsmith/.venv/bin/feedsmith check --config /etc/feedsmith/config.toml
+ExecStart=/usr/bin/flock -n /var/lib/feedsmith/run.lock /srv/feedsmith/.venv/bin/feedsmith run --config /etc/feedsmith/config.toml --source omni --mode full
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/feedsmith -/var/lib/node_exporter/textfile_collector
+UMask=0077

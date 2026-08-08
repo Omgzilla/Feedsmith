@@ -1,11 +1,11 @@
 [Unit]
-Description=Run Omni RSS publisher every five minutes
+Description=Run the Omni latest discovery every five minutes
 
 [Timer]
 OnCalendar=*:0/5
 Persistent=true
 RandomizedDelaySec=30
-Unit=omni-rss.service
+Unit=feedsmith-latest.service
 
 [Install]
 WantedBy=timers.target
