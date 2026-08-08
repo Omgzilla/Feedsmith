@@ -18,7 +18,8 @@ def remove_text_blocks(value: str, blocks: tuple[str, ...]) -> str:
     """Remove known UI blocks while tolerating whitespace and dash variations."""
     cleaned = value
     for block in blocks:
-        words = [re.escape(word) for word in compact_text(block).split()]
-        pattern = r"\s*".join(words).replace(r"\-", "[-–—]")
+        words = ["[-–—]" if word in {"-", "–", "—"} else re.escape(word) for word in compact_text(block).split()]
+        pattern = r"\s*".join(words)
         cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
-    return compact_text(cleaned)
+    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", compact_text(cleaned))
+    return re.sub(r"([.!?])\1+", r"\1", cleaned)

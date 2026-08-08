@@ -20,13 +20,14 @@ Run as `root` inside the container:
 
 ```bash
 apt update
+apt full-upgrade -y
 apt install -y ca-certificates curl git python3 python3-venv sqlite3
 
 adduser --system --group --home /var/lib/feedsmith feedsmith
 install -d -o feedsmith -g feedsmith /var/lib/feedsmith /var/lib/feedsmith/public
 install -d -o root -g feedsmith -m 0750 /etc/feedsmith
 
-git clone https://github.com/YOUR-ACCOUNT/feedsmith.git /srv/feedsmith
+git clone https://github.com/Omgzilla/feedsmith.git /srv/feedsmith
 python3 -m venv /srv/feedsmith/.venv
 /srv/feedsmith/.venv/bin/pip install --upgrade pip
 /srv/feedsmith/.venv/bin/pip install /srv/feedsmith

@@ -39,7 +39,7 @@ def run(settings: Settings, *, source_name: str, mode: str, upload: bool) -> int
         database.prune(source_name, source_settings.retention_days)
         files: dict[str, bytes] = {}
         for feed_filter in source_settings.feeds:
-            feed_articles = database.latest(source_name, settings.feed_entries, feed_filter)
+            feed_articles = [adapter.normalize_for_feed(article) for article in database.latest(source_name, settings.feed_entries, feed_filter)]
             base = f"{settings.public_base_url}/{source_name}"
             prefix = "" if feed_filter.name == "all" else f"/{feed_filter.name}"
             rss_key, atom_key = f"{source_name}{prefix}/rss.xml", f"{source_name}{prefix}/atom.xml"

@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
@@ -21,6 +22,19 @@ PROMOTION_BLOCKS = (
     "Gå förbi betalväggar! Omni Mer låser upp en mängd artiklar. En smidig lösning när du vill fördjupa dig.",
 )
 CONTACT_EDITORIAL = "Kontakta redaktionen"
+MER_BENEFITS_CARD = re.compile(
+    r"fortsätt\s+läsa\s*[-–—]\s*testa\s+gratis\s+i\s+1\s+månad.*?"
+    r"läs\s+utan\s+annonser.*?dela\s+med\s+en\s+vän.*?"
+    r"avsluta\s+när\s+du\s+vill.*?(?:link\s+)?prova\s+gratis",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+CONTACT_INFORMATION = re.compile(
+    r"omni\s+är\s+politiskt\s+obundna\s+och\s+oberoende\.\s*"
+    r"vi\s+strävar\s+efter\s+att\s+ge\s+fler\s+perspektiv\s+på\s+nyheterna\.\s*"
+    r"har\s+du\s+frågor\s+eller\s+synpunkter\s+kring\s+vår\s+rapportering\?\s*"
+    r"kontakta\s+redaktionen",
+    flags=re.IGNORECASE | re.DOTALL,
+)
 
 
 class OmniSource(SourceAdapter):
@@ -47,6 +61,9 @@ class OmniSource(SourceAdapter):
             except (ValueError, requests.RequestException) as error:
                 print(f"source=omni event=article_skipped url={link!r} error={error}")
         return articles
+
+    def normalize_for_feed(self, article: Article) -> Article:
+        return replace(article, description=(clean_teaser(article.description) or None) if article.description else None)
 
     def _get(self, url: str) -> str:
         response = self.session.get(url, timeout=self.timeout)
@@ -93,13 +110,22 @@ def parse_article(html: str, discovered_url: str) -> Article:
 def clean_teaser(value: str) -> str:
     """Remove known Omni UI/promotional fragments, keeping public editorial teaser text."""
     soup = BeautifulSoup(value, "html.parser")
+    # Remove complete, source-specific UI components before collecting text. The
+    # module-name prefix is stable while the generated suffix changes per build.
+    for component in soup.select("[class*='SalesPosterContainer'], [class*='contactInformation']"):
+        component.decompose()
     for anchor in soup.find_all("a"):
         if normalized_text(anchor.get_text(" ", strip=True)) == normalized_text(CONTACT_EDITORIAL):
             anchor.decompose()
     for text in list(soup.find_all(string=True)):
         if isinstance(text, NavigableString) and normalized_text(str(text)) == normalized_text(CONTACT_EDITORIAL):
             text.extract()
-    return remove_text_blocks(soup.get_text(" ", strip=True), PROMOTION_BLOCKS)
+    text = soup.get_text(" ", strip=True)
+    # This expanded Omni Mer card may contain image alt text between its benefit
+    # labels. Remove it only when the complete, distinctive sequence is present.
+    text = MER_BENEFITS_CARD.sub(" ", text)
+    text = CONTACT_INFORMATION.sub(" ", text)
+    return remove_text_blocks(text, PROMOTION_BLOCKS + (CONTACT_EDITORIAL,))
 
 
 def canonicalize_url(value: str) -> str:
