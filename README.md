@@ -1,31 +1,154 @@
 # Feedsmith
-*Forging clean feeds from arbitrary sources*
 
-`feedsmith` is a small scheduled Python application that collects public metadata from configured sites, keeps canonical article history in SQLite, and publishes RSS 2.0 and Atom feeds to Cloudflare R2.
+*Forging clean feeds from public web sources.*
 
-The first adapter is `omni`; the application is deliberately structured as a generic engine plus source adapters:
+Feedsmith runs on linux (probably runs on other OS's as well), stores article metadata in SQLite, and publishes RSS and Atom XML to Cloudflare R2. Its first source is Omni.se.
 
-```text
-feedsmith/
-  core/       SQLite, feeds, R2 publishing, metrics
-  sources/    site-specific discovery and cleanup
-  sources/omni.py
-```
-
-It does not download or proxy article images, retrieve subscriber-only article bodies, run a persistent web server, or use Docker, Workers, Pages, GitHub Actions, or GitHub as generated-feed storage.
-
-## Outputs
-
-The initial Omni feed endpoints are:
+The result is a feed such as:
 
 ```text
 https://rss.example.com/omni/rss.xml
-https://rss.example.com/omni/atom.xml
 ```
 
-`/senaste` runs every five minutes and publishes immediately. Homepage/category discovery runs every thirty minutes to improve coverage and then publishes the same feeds. The configured 90-day Omni override retains source history; the global default for later sources is 30 days.
+## Quick start
 
-Future filters are configuration-driven and use the same SQLite data:
+These steps set up Feedsmith on a fresh Ubuntu 24.04 container. Replace the Git URL and email address before running them.
+
+### 1. Install Feedsmith
+
+Run as `root` inside the container:
+
+```bash
+apt update
+apt install -y ca-certificates curl git python3 python3-venv sqlite3
+
+adduser --system --group --home /var/lib/feedsmith feedsmith
+install -d -o feedsmith -g feedsmith /var/lib/feedsmith /var/lib/feedsmith/public
+install -d -o root -g feedsmith -m 0750 /etc/feedsmith
+
+git clone https://github.com/YOUR-ACCOUNT/feedsmith.git /srv/feedsmith
+python3 -m venv /srv/feedsmith/.venv
+/srv/feedsmith/.venv/bin/pip install --upgrade pip
+/srv/feedsmith/.venv/bin/pip install /srv/feedsmith
+
+install -m 0640 -o root -g feedsmith /srv/feedsmith/config.toml.example /etc/feedsmith/config.toml
+install -m 0600 -o root -g root /srv/feedsmith/systemd/feedsmith.env.example /etc/feedsmith/feedsmith.env
+```
+
+### 2. Create the R2 bucket and API token
+
+In Cloudflare:
+
+1. Create an R2 bucket, for example `feedsmith`.
+2. Create an **Account API token** limited to that bucket with **Object Read & Write** permission.
+3. Add the bucket custom domain, for example `rss.example.com`.
+4. Copy the S3 endpoint, access-key ID, and secret-key value.
+
+### 3. Add your settings
+
+Edit the non-secret settings:
+
+```bash
+nano /etc/feedsmith/config.toml
+```
+
+Set `public_base_url` to your domain:
+
+```toml
+[publishing]
+public_base_url = "https://rss.example.com"
+```
+
+Then edit the secrets file:
+
+```bash
+nano /etc/feedsmith/feedsmith.env
+```
+
+Set these values:
+
+```ini
+FEEDSMITH_USER_AGENT="feedsmith/1.0 (+mailto:you@example.com)"
+R2_ENDPOINT_URL=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+R2_BUCKET=feedsmith
+R2_ACCESS_KEY_ID=replace-me
+R2_SECRET_ACCESS_KEY=replace-me
+```
+
+Keep this file private. It contains the R2 secret and must never be committed.
+
+### 4. Make a safe first run
+
+This fetches Omni’s public metadata and creates local feed files without uploading anything to R2:
+
+```bash
+runuser -u feedsmith -- /srv/feedsmith/.venv/bin/feedsmith run \
+  --config /etc/feedsmith/config.toml \
+  --source omni --mode latest --no-upload
+```
+
+Confirm that the files exist and are valid XML:
+
+```bash
+ls -lh /var/lib/feedsmith/public/omni/
+python3 -c 'from xml.etree import ElementTree as ET; ET.parse("/var/lib/feedsmith/public/omni/rss.xml"); ET.parse("/var/lib/feedsmith/public/omni/atom.xml")'
+```
+
+### 5. Publish once, then enable timers
+
+Install the units and run the first real publish:
+
+```bash
+install -m 0644 /srv/feedsmith/systemd/feedsmith-*.service /etc/systemd/system/
+install -m 0644 /srv/feedsmith/systemd/feedsmith-*.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl start feedsmith-latest.service
+systemctl status feedsmith-latest.service --no-pager
+```
+
+Check the public feed:
+
+```bash
+curl --fail --silent --show-error https://rss.example.com/omni/rss.xml >/dev/null
+```
+
+Enable scheduled updates:
+
+```bash
+systemctl enable --now feedsmith-latest.timer feedsmith-full.timer feedsmith-maintenance.timer
+systemctl list-timers 'feedsmith-*'
+```
+
+That is it. Add `https://rss.example.com/omni/rss.xml` to your reader.
+
+## What runs when
+
+| Unit | Schedule | Purpose |
+| --- | --- | --- |
+| `feedsmith-latest.timer` | Every 5 minutes | Scrape `/senaste` and publish immediately. |
+| `feedsmith-full.timer` | Every 30 minutes | Scan the homepage and configured categories for coverage. |
+| `feedsmith-maintenance.timer` | Daily | Prune expired history and optimize SQLite. |
+
+## Day-to-day operations
+
+```bash
+# Recent run logs
+journalctl -u feedsmith-latest.service -n 100 --no-pager
+
+# Run a full coverage scan immediately
+systemctl start feedsmith-full.service
+
+# Test the configuration/R2 credentials
+/srv/feedsmith/.venv/bin/feedsmith check --config /etc/feedsmith/config.toml
+```
+
+There is intentionally no public status endpoint. If configured, Prometheus metrics are written to the node_exporter textfile collector.
+
+## Configuration
+
+[`config.toml.example`](config.toml.example) contains every non-secret setting. The global retention default is 30 days; Omni uses a 90-day override. Feed history defaults to 500 entries.
+
+Future filtered feeds reuse the same SQLite data. Enable them under `[sources.omni.feeds]`:
 
 ```text
 /omni/free/rss.xml
@@ -33,56 +156,13 @@ Future filters are configuration-driven and use the same SQLite data:
 /omni/ekonomi/rss.xml
 ```
 
-## Omni adapter behavior
+## Omni behavior and limits
 
-The Omni adapter collects only public title, teaser, URL, timestamps, category, author, tags, premium flag, and hotlinked Omni image URL. It preserves useful existing metadata if a later scrape omits it.
+The Omni adapter reads public metadata only: title, teaser, URL, time, category, author, tags, premium status, and hotlinked Omni image URL. It does not fetch subscriber-only bodies or download images.
 
-Premium articles remain in the feed with their original title and a `Premium` RSS/Atom category in addition to their normal section. The adapter removes known Omni Mer promotional UI and the standalone `Kontakta redaktionen` UI link from a teaser before it enters generic storage. These are Omni-only rules; other sources must opt into their own cleanup.
+Premium stories stay in the feed with their unchanged titles and a `Premium` category. Known Omni Mer promotional blocks and the standalone `Kontakta redaktionen` UI link are removed by the Omni adapter only.
 
-Before deploying, review Omni's current terms and crawler guidance, identify the scraper accurately with `FEEDSMITH_USER_AGENT`, and keep the configured request delay conservative.
-
-## Configuration and install
-
-On Ubuntu 24.04, install `python3`, `python3-venv`, `sqlite3`, and `ca-certificates`. Use a non-login `feedsmith` account and install the source at `/srv/feedsmith`.
-
-```bash
-python3 -m venv /srv/feedsmith/.venv
-/srv/feedsmith/.venv/bin/pip install /srv/feedsmith
-install -d -o feedsmith -g feedsmith /var/lib/feedsmith /var/lib/feedsmith/public
-install -d -o root -g feedsmith -m 0750 /etc/feedsmith
-install -m 0640 config.toml.example /etc/feedsmith/config.toml
-install -m 0600 systemd/feedsmith.env.example /etc/feedsmith/feedsmith.env
-```
-
-Edit `/etc/feedsmith/config.toml` for non-secret application/source settings and `/etc/feedsmith/feedsmith.env` for R2 credentials. Do not commit either deployment copy. R2 needs only a bucket, a custom domain, and a bucket-restricted Object Read & Write API token.
-
-Test without network publishing:
-
-```bash
-sudo -u feedsmith /srv/feedsmith/.venv/bin/feedsmith run --config /etc/feedsmith/config.toml --source omni --mode latest --no-upload
-```
-
-Then install and activate the three timers:
-
-```bash
-install -m 0644 systemd/feedsmith-*.service /etc/systemd/system/
-install -m 0644 systemd/feedsmith-*.timer /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now feedsmith-latest.timer feedsmith-full.timer feedsmith-maintenance.timer
-```
-
-Operational output is structured for the journal:
-
-```bash
-journalctl -u feedsmith-latest.service -n 100 --no-pager
-systemctl list-timers 'feedsmith-*'
-```
-
-There is intentionally no public status object. Optional Prometheus metrics are written to node_exporter's textfile collector if `PROMETHEUS_TEXTFILE_PATH` is configured.
-
-## Safety and validation
-
-SQLite remains unchanged on an unsuccessful parse. Before replacing a local feed or uploading to R2, generated XML is parsed and checked for the configured minimum entry count, titles, canonical Omni links, and recency. Local files are atomically replaced. R2 objects are uploaded only after all local feeds validate; RSS and Atom remain separate complete objects because R2 has no multi-object atomic transaction.
+Review Omni’s current terms and crawler guidance before deployment. Identify the scraper honestly with `FEEDSMITH_USER_AGENT` and keep the request delay conservative.
 
 ## Development
 
@@ -92,4 +172,4 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 ```
 
-Fixtures cover parser and cleanup behavior without live Omni requests. Add a source by implementing `SourceAdapter` in `feedsmith/sources/`, then registering it in the CLI; shared SQLite, feed, publishing, retention, and metrics behavior remains untouched.
+The generic engine lives in `feedsmith/core/`; source-specific scraping and cleanup lives in `feedsmith/sources/`. Adding another source should not require changes to storage, feed rendering, R2 publishing, or scheduling.
