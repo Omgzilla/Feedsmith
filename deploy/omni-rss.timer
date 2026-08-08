@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Omni RSS publisher every five minutes
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+RandomizedDelaySec=30
+Unit=omni-rss.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=Build and publish Omni RSS and Atom feeds
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=omni-rss
+Group=omni-rss
+WorkingDirectory=/srv/omni-rss
+EnvironmentFile=/etc/omni-rss/omni-rss.env
+ExecStartPre=/srv/omni-rss/.venv/bin/omni-rss check
+ExecStart=/usr/bin/flock -n /var/lib/omni-rss/run.lock /srv/omni-rss/.venv/bin/omni-rss run
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/omni-rss -/var/lib/node_exporter/textfile_collector
+UMask=0077
