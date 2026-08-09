@@ -31,6 +31,7 @@ class Database:
                 canonical_url TEXT NOT NULL,
                 title TEXT NOT NULL,
                 description TEXT,
+                content_html TEXT,
                 image_url TEXT,
                 section TEXT,
                 author TEXT,
@@ -58,6 +59,9 @@ class Database:
             );
             """
         )
+        columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(articles)")}
+        if "content_html" not in columns:
+            self.connection.execute("ALTER TABLE articles ADD COLUMN content_html TEXT")
         self.connection.commit()
 
     def start_run(self, source: str, mode: str) -> int:
@@ -80,14 +84,15 @@ class Database:
         self.connection.execute(
             """
             INSERT INTO articles (
-                source, external_id, canonical_url, title, description, image_url,
+                source, external_id, canonical_url, title, description, content_html, image_url,
                 section, author, published_at, updated_at, first_seen_at, last_seen_at,
                 is_premium, tags_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source, canonical_url) DO UPDATE SET
                 external_id=excluded.external_id,
                 title=excluded.title,
                 description=COALESCE(excluded.description, articles.description),
+                content_html=COALESCE(excluded.content_html, articles.content_html),
                 image_url=COALESCE(excluded.image_url, articles.image_url),
                 section=COALESCE(excluded.section, articles.section),
                 author=COALESCE(excluded.author, articles.author),
@@ -99,7 +104,7 @@ class Database:
             """,
             (
                 article.source, article.external_id, article.canonical_url, article.title,
-                article.description, article.image_url, article.section, article.author,
+                article.description, article.content_html, article.image_url, article.section, article.author,
                 _datetime(article.published_at), _datetime(article.updated_at), now, now,
                 int(article.is_premium), json.dumps(article.tags, ensure_ascii=False),
             ),
@@ -136,11 +141,19 @@ class Database:
         ).fetchall()
         return [_article(row) for row in rows]
 
+    def without_content(self, source: str, limit: int) -> list[Article]:
+        rows = self.connection.execute(
+            """SELECT * FROM articles WHERE source=? AND is_premium=0 AND content_html IS NULL
+               ORDER BY COALESCE(published_at, first_seen_at) DESC, first_seen_at DESC LIMIT ?""",
+            (source, limit),
+        ).fetchall()
+        return [_article(row) for row in rows]
+
 
 def _article(row: sqlite3.Row) -> Article:
     return Article(
         source=row["source"], external_id=row["external_id"], canonical_url=row["canonical_url"],
-        title=row["title"], description=row["description"], image_url=row["image_url"],
+        title=row["title"], description=row["description"], content_html=row["content_html"], image_url=row["image_url"],
         section=row["section"], author=row["author"], published_at=_parse_datetime(row["published_at"]),
         updated_at=_parse_datetime(row["updated_at"]), is_premium=bool(row["is_premium"]),
         tags=tuple(json.loads(row["tags_json"])),

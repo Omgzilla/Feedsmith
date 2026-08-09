@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import re
 import time
@@ -65,6 +66,9 @@ class OmniSource(SourceAdapter):
     def normalize_for_feed(self, article: Article) -> Article:
         return replace(article, description=(clean_teaser(article.description) or None) if article.description else None)
 
+    def fetch_article(self, url: str) -> Article:
+        return parse_article(self._get(url), url)
+
     def _get(self, url: str) -> str:
         response = self.session.get(url, timeout=self.timeout)
         response.raise_for_status()
@@ -100,11 +104,29 @@ def parse_article(html: str, discovered_url: str) -> Article:
     return Article(
         source="omni", external_id=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         canonical_url=canonical, title=compact_text(title), description=(clean_teaser(description) or None) if description else None,
+        content_html=None if premium else _public_article_html(soup),
         image_url=image, section=compact_text(section) if section else None,
         author=(compact_text(author) or None) if author else None, published_at=_parse_datetime(_value(data, "datePublished") or _meta(soup, "article:published_time")),
         updated_at=_parse_datetime(_value(data, "dateModified") or _meta(soup, "article:modified_time")),
         is_premium=premium, tags=tags,
     )
+
+
+def _public_article_html(soup: BeautifulSoup) -> str | None:
+    """Return public article text only; never traverse paywall or page UI components."""
+    container = soup.select_one("article [class*='Text-module'][class*='textContainer']")
+    if not container:
+        return None
+    blocks: list[str] = []
+    for element in container.find_all(["p", "h2", "h3", "blockquote", "li"]):
+        if element.find_parent(["p", "li", "blockquote"]) is not None:
+            continue
+        text = compact_text(element.get_text(" ", strip=True))
+        if not text:
+            continue
+        tag = element.name if element.name in {"h2", "h3", "blockquote", "li"} else "p"
+        blocks.append(f"<{tag}>{html.escape(text)}</{tag}>")
+    return "".join(blocks) or None
 
 
 def clean_teaser(value: str) -> str:

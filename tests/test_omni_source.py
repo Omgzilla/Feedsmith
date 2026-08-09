@@ -65,6 +65,15 @@ def test_live_omni_paywall_and_contact_components_are_removed_as_whole_blocks():
     assert clean_teaser(fragment) == "Public teaser."
 
 
+def test_free_article_extracts_public_body_but_premium_article_does_not():
+    free = """<html><head><meta property="og:title" content="Free"><meta property="og:url" content="https://omni.se/a/free"></head>
+    <body><article><div class="Text-module-scss-module__abc__textContainer"><p>First paragraph.</p><p>Second paragraph.</p></div>
+    <div class="ArticleActions-module-scss-module__abc__contactInformation">Kontakta redaktionen</div></article></body></html>"""
+    premium = free.replace("<head>", "<head><script type=\"application/ld+json\">{\"@type\":\"NewsArticle\",\"headline\":\"Premium\",\"isAccessibleForFree\":false}</script>")
+    assert parse_article(free, "https://omni.se/a/free").content_html == "<p>First paragraph.</p><p>Second paragraph.</p>"
+    assert parse_article(premium, "https://omni.se/a/premium").content_html is None
+
+
 def test_canonicalization_removes_tracking_and_fragments_but_preserves_other_query():
     assert canonicalize_url("https://omni.se/a/a1/?utm_source=x&variant=amp#comments") == "https://omni.se/a/a1?variant=amp"
 

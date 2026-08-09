@@ -1,0 +1,19 @@
+[Unit]
+Description=Backfill public Omni article bodies and publish Feedsmith feeds
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=feedsmith
+Group=feedsmith
+WorkingDirectory=/srv/feedsmith
+EnvironmentFile=/etc/feedsmith/feedsmith.env
+ExecStartPre=/srv/feedsmith/.venv/bin/feedsmith check --config /etc/feedsmith/config.toml
+ExecStart=/usr/bin/flock -n /var/lib/feedsmith/run.lock /srv/feedsmith/.venv/bin/feedsmith run --config /etc/feedsmith/config.toml --source omni --mode backfill
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/feedsmith -/var/lib/node_exporter/textfile_collector
+UMask=0077

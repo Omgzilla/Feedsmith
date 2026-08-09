@@ -25,6 +25,8 @@ latest_urls = ["https://omni.se/senaste"]
 # Add every category wanted for coverage. All remain one canonical article record.
 full_urls = ["https://omni.se/", "https://omni.se/ekonomi", "https://omni.se/utrikes"]
 max_candidates_per_url = 50
+# One-off body backfill cap; use 500 to fill the normal feed history.
+max_backfill_articles = 500
 
 [sources.omni.feeds]
 all = true

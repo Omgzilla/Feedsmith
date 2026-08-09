@@ -19,6 +19,7 @@ class Article:
     published_at: datetime | None
     updated_at: datetime | None
     is_premium: bool
+    content_html: str | None = None
     tags: tuple[str, ...] = ()
 
 

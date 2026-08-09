@@ -33,6 +33,16 @@ def test_rss_and_atom_have_premium_and_multiple_image_forms():
     assert "&amp;" in rss.decode()
 
 
+def test_full_content_is_emitted_in_rss_and_atom():
+    item = article(content_html="<p>Full public article text.</p>")
+    rss = rss_bytes([item], feed_url="https://rss.example.com/omni/rss.xml", source_title="Omni", source_url="https://omni.se/senaste")
+    atom = atom_bytes([item], feed_url="https://rss.example.com/omni/atom.xml", source_title="Omni", source_url="https://omni.se/senaste")
+    rss_root = ET.fromstring(rss)
+    atom_root = ET.fromstring(atom)
+    assert "Full public article text." in rss_root.find(".//{http://purl.org/rss/1.0/modules/content/}encoded").text
+    assert "Full public article text." in atom_root.find(".//{http://www.w3.org/2005/Atom}content").text
+
+
 def test_database_preserves_existing_metadata_when_new_scrape_is_missing(tmp_path: Path):
     database = Database(tmp_path / "state.sqlite3")
     database.upsert(article())
@@ -44,6 +54,16 @@ def test_database_preserves_existing_metadata_when_new_scrape_is_missing(tmp_pat
     assert stored.section == "Ekonomi"
     assert stored.published_at is not None
     assert stored.is_premium is True
+    database.close()
+
+
+def test_database_backfill_selects_only_free_articles_without_bodies(tmp_path: Path):
+    database = Database(tmp_path / "state.sqlite3")
+    database.upsert(article(is_premium=False, content_html=None))
+    database.upsert(article(external_id="premium", canonical_url="https://omni.se/a/premium", is_premium=True, content_html=None))
+    database.upsert(article(external_id="body", canonical_url="https://omni.se/a/body", is_premium=False, content_html="<p>Stored</p>"))
+    database.commit()
+    assert [item.canonical_url for item in database.without_content("omni", 10)] == ["https://omni.se/ekonomi/a/a"]
     database.close()
 
 

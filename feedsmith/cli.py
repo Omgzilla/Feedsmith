@@ -29,9 +29,17 @@ def run(settings: Settings, *, source_name: str, mode: str, upload: bool) -> int
     discovered = stored = published = 0
     data_committed = False
     try:
-        urls = source_settings.latest_urls if mode == "latest" else source_settings.full_urls
         adapter = adapter_class(timeout=settings.request_timeout_seconds, delay=settings.request_delay_seconds, user_agent=settings.user_agent)
-        articles = adapter.discover(urls, source_settings.max_candidates_per_url)
+        if mode == "backfill":
+            articles = []
+            for existing in database.without_content(source_name, source_settings.max_backfill_articles):
+                try:
+                    articles.append(adapter.fetch_article(existing.canonical_url))
+                except Exception as error:
+                    print(f"event=backfill_skipped source={source_name} url={existing.canonical_url!r} error={error}")
+        else:
+            urls = source_settings.latest_urls if mode == "latest" else source_settings.full_urls
+            articles = adapter.discover(urls, source_settings.max_candidates_per_url)
         discovered = len(articles)
         for article in articles:
             database.upsert(article)
@@ -98,7 +106,7 @@ def main() -> None:
     parser.add_argument("command", choices=("run", "check", "maintain"), nargs="?", default="run")
     parser.add_argument("--config", type=Path, default=Path("/etc/feedsmith/config.toml"))
     parser.add_argument("--source", default="omni")
-    parser.add_argument("--mode", choices=("latest", "full"), default="latest")
+    parser.add_argument("--mode", choices=("latest", "full", "backfill"), default="latest")
     parser.add_argument("--no-upload", action="store_true")
     arguments = parser.parse_args()
     settings = Settings.from_toml(arguments.config)

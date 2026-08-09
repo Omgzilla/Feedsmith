@@ -120,7 +120,14 @@ systemctl enable --now feedsmith-latest.timer feedsmith-full.timer feedsmith-mai
 systemctl list-timers 'feedsmith-*'
 ```
 
-That is it. Add `https://rss.example.com/omni/rss.xml` to your reader.
+That is it. Add `https://rss.example.com/omni/rss.xml` to your reader. In [ReadYou](https://github.com/ReadYouApp/ReadYou), **do not select “Parse full content”** when adding this feed: Feedsmith already provides the cleaned public article content in the feed itself. That option fetches Omni’s original webpage and will show Omni’s own page UI and advertising.
+
+If you are upgrading from a metadata-only Feedsmith release, run this one-off backfill after installing the updated systemd unit. It fetches public bodies for existing free articles and republishes the feeds; it never fetches Omni Mer bodies:
+
+```bash
+systemctl start feedsmith-backfill.service
+journalctl -u feedsmith-backfill.service -n 100 --no-pager
+```
 
 ## What runs when
 
@@ -145,6 +152,30 @@ systemctl start feedsmith-full.service
 
 There is intentionally no public status endpoint. If configured, Prometheus metrics are written to the node_exporter textfile collector.
 
+## Updating Feedsmith
+
+Do not only pull the source: the systemd services run the package installed in `/srv/feedsmith/.venv`. Stop the timers, pull the reviewed update, reinstall the package, then run a fresh latest scrape:
+
+```bash
+systemctl stop feedsmith-latest.timer feedsmith-full.timer feedsmith-maintenance.timer
+
+git -C /srv/feedsmith pull --ff-only
+/srv/feedsmith/.venv/bin/pip install --upgrade /srv/feedsmith
+
+systemctl daemon-reload
+systemctl start feedsmith-latest.timer feedsmith-full.timer feedsmith-maintenance.timer
+systemctl start feedsmith-latest.service
+```
+
+After upgrading to a release that adds or changes public-body extraction, also run `systemctl start feedsmith-backfill.service` once.
+
+Verify the result:
+
+```bash
+systemctl status feedsmith-latest.service --no-pager
+journalctl -u feedsmith-latest.service -n 100 --no-pager
+```
+
 ## Configuration
 
 [`config.toml.example`](config.toml.example) contains every non-secret setting. The global retention default is 30 days; Omni uses a 90-day override. Feed history defaults to 500 entries.
@@ -159,9 +190,9 @@ Future filtered feeds reuse the same SQLite data. Enable them under `[sources.om
 
 ## Omni behavior and limits
 
-The Omni adapter reads public metadata only: title, teaser, URL, time, category, author, tags, premium status, and hotlinked Omni image URL. It does not fetch subscriber-only bodies or download images.
+The Omni adapter reads public metadata plus the public body of free articles: title, teaser, public body, URL, time, category, author, tags, premium status, and hotlinked Omni image URL. It does not fetch subscriber-only bodies or download images.
 
-Premium stories stay in the feed with their unchanged titles and a `Premium` category. Known Omni Mer promotional blocks and the standalone `Kontakta redaktionen` UI link are removed by the Omni adapter only.
+Premium stories stay in the feed with their unchanged titles, public teasers, and a `Premium` category; their subscriber-only bodies are never included. Known Omni Mer promotional blocks and Omni’s contact-information UI are removed by the Omni adapter only.
 
 Review Omni’s current terms and crawler guidance before deployment. Identify the scraper honestly with `FEEDSMITH_USER_AGENT` and keep the request delay conservative.
 

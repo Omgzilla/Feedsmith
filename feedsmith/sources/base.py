@@ -18,3 +18,7 @@ class SourceAdapter(ABC):
     def normalize_for_feed(self, article: Article) -> Article:
         """Apply source-specific presentation cleanup to historic stored metadata."""
         return replace(article)
+
+    @abstractmethod
+    def fetch_article(self, url: str) -> Article:
+        """Fetch and parse one canonical article for an explicit refresh/backfill."""

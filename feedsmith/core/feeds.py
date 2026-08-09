@@ -9,8 +9,10 @@ from .models import Article
 
 MEDIA = "http://search.yahoo.com/mrss/"
 ATOM = "http://www.w3.org/2005/Atom"
+CONTENT = "http://purl.org/rss/1.0/modules/content/"
 ET.register_namespace("media", MEDIA)
 ET.register_namespace("atom", ATOM)
+ET.register_namespace("content", CONTENT)
 
 
 def rss_bytes(articles: list[Article], *, feed_url: str, source_title: str, source_url: str) -> bytes:
@@ -31,6 +33,7 @@ def rss_bytes(articles: list[Article], *, feed_url: str, source_title: str, sour
         for category in _categories(article):
             _element(item, "category", category)
         _element(item, "description", _html_description(article))
+        _element(item, "encoded", _article_html(article), namespace=CONTENT)
         if article.image_url:
             mime = _image_type(article.image_url)
             ET.SubElement(item, "enclosure", {"url": article.image_url, "type": mime})
@@ -56,6 +59,7 @@ def atom_bytes(articles: list[Article], *, feed_url: str, source_title: str, sou
         for category in _categories(article):
             ET.SubElement(entry, f"{{{ATOM}}}category", {"term": category})
         _element(entry, "summary", _html_description(article), {"type": "html"}, namespace=ATOM)
+        _element(entry, "content", _article_html(article), {"type": "html"}, namespace=ATOM)
         if article.image_url:
             ET.SubElement(entry, f"{{{ATOM}}}link", {"href": article.image_url, "rel": "enclosure", "type": _image_type(article.image_url)})
     return _xml(feed)
@@ -84,6 +88,11 @@ def _html_description(article: Article) -> str:
     image = f'<img src="{html.escape(article.image_url, quote=True)}" alt="" loading="lazy" />' if article.image_url else ""
     text = html.escape(article.description or "")
     return f"{image}<p>{text}</p>" if text else image
+
+
+def _article_html(article: Article) -> str:
+    image = f'<img src="{html.escape(article.image_url, quote=True)}" alt="" loading="lazy" />' if article.image_url else ""
+    return f"{image}{article.content_html}" if article.content_html else _html_description(article)
 
 
 def _image_type(url: str) -> str:

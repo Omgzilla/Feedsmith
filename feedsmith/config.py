@@ -16,6 +16,7 @@ class SourceSettings:
     latest_urls: tuple[str, ...]
     full_urls: tuple[str, ...]
     max_candidates_per_url: int
+    max_backfill_articles: int
     feeds: tuple[FeedFilter, ...]
     feed_title: str
     homepage_url: str
@@ -89,7 +90,8 @@ def _source_settings(name: str, data: dict[str, object], default_retention_days:
         name=name, enabled=bool(data.get("enabled", True)), retention_days=int(data.get("retention_days", default_retention_days)),
         latest_urls=tuple(data.get("latest_urls", default_latest_urls)),
         full_urls=tuple(data.get("full_urls", default_full_urls)),
-        max_candidates_per_url=int(data.get("max_candidates_per_url", 50)), feeds=tuple(filters),
+        max_candidates_per_url=int(data.get("max_candidates_per_url", 50)),
+        max_backfill_articles=int(data.get("max_backfill_articles", 500)), feeds=tuple(filters),
         feed_title=str(data.get("feed_title", f"{name} – latest articles")),
         homepage_url=str(data.get("homepage_url", (data.get("latest_urls") or default_latest_urls or ["https://example.invalid"])[0])),
         canonical_hosts=tuple(data.get("canonical_hosts", [f"{name}.invalid"])),
