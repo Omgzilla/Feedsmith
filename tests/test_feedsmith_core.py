@@ -30,6 +30,9 @@ def test_rss_and_atom_have_premium_and_multiple_image_forms():
     assert [node.text for node in root.findall(".//channel/item/category")] == ["Premium", "Ekonomi", "Börs"]
     assert root.find(".//channel/item/enclosure").attrib["url"] == item.image_url
     assert root.find(".//{http://search.yahoo.com/mrss/}thumbnail").attrib["url"] == item.image_url
+    atom_root = ET.fromstring(atom)
+    assert atom_root.find("{http://www.w3.org/2005/Atom}author/{http://www.w3.org/2005/Atom}name").text == "Feedsmith"
+    assert atom_root.find(".//{http://www.w3.org/2005/Atom}entry/{http://www.w3.org/2005/Atom}author/{http://www.w3.org/2005/Atom}name") is None
     assert "&amp;" in rss.decode()
 
 

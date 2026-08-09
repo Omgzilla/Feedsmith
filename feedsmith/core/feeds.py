@@ -47,6 +47,7 @@ def atom_bytes(articles: list[Article], *, feed_url: str, source_title: str, sou
     _element(feed, "title", source_title, namespace=ATOM)
     _element(feed, "id", feed_url, namespace=ATOM)
     _element(feed, "updated", _atom_time(max((_article_time(a) for a in articles), default=datetime.now(UTC))), namespace=ATOM)
+    _author(feed, "Feedsmith", namespace=ATOM)
     ET.SubElement(feed, f"{{{ATOM}}}link", {"href": feed_url, "rel": "self", "type": "application/atom+xml"})
     ET.SubElement(feed, f"{{{ATOM}}}link", {"href": source_url, "rel": "alternate", "type": "text/html"})
     for article in articles:
@@ -56,6 +57,8 @@ def atom_bytes(articles: list[Article], *, feed_url: str, source_title: str, sou
         _element(entry, "updated", _atom_time(article.updated_at or _article_time(article)), namespace=ATOM)
         _element(entry, "published", _atom_time(_article_time(article)), namespace=ATOM)
         ET.SubElement(entry, f"{{{ATOM}}}link", {"href": article.canonical_url, "rel": "alternate", "type": "text/html"})
+        if article.author:
+            _author(entry, article.author, namespace=ATOM)
         for category in _categories(article):
             ET.SubElement(entry, f"{{{ATOM}}}category", {"term": category})
         _element(entry, "summary", _html_description(article), {"type": "html"}, namespace=ATOM)
@@ -82,6 +85,11 @@ def _element(parent: ET.Element, name: str, text: str, attributes: dict[str, str
     element = ET.SubElement(parent, f"{{{namespace}}}{name}" if namespace else name, attributes or {})
     element.text = text
     return element
+
+
+def _author(parent: ET.Element, name: str, *, namespace: str) -> None:
+    author = ET.SubElement(parent, f"{{{namespace}}}author")
+    _element(author, "name", name, namespace=namespace)
 
 
 def _html_description(article: Article) -> str:
