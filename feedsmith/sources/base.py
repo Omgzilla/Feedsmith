@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import replace
 
 from feedsmith.core.models import Article
 
@@ -17,7 +16,7 @@ class SourceAdapter(ABC):
 
     def normalize_for_feed(self, article: Article) -> Article:
         """Apply source-specific presentation cleanup to historic stored metadata."""
-        return replace(article)
+        return article
 
     @abstractmethod
     def fetch_article(self, url: str) -> Article:

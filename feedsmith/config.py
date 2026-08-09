@@ -28,7 +28,6 @@ class Settings:
     database: Path
     public_dir: Path
     public_base_url: str
-    retention_days: int
     feed_entries: int
     minimum_entries: int
     maximum_newest_age_hours: int
@@ -57,7 +56,7 @@ class Settings:
             database=Path(application.get("database", "/var/lib/feedsmith/feedsmith.sqlite3")),
             public_dir=Path(application.get("public_dir", "/var/lib/feedsmith/public")),
             public_base_url=str(publishing.get("public_base_url", "https://rss.example.com")).rstrip("/"),
-            retention_days=int(application.get("retention_days", 30)), feed_entries=int(application.get("feed_entries", 500)),
+            feed_entries=int(application.get("feed_entries", 500)),
             minimum_entries=int(application.get("minimum_entries", 1)), maximum_newest_age_hours=int(application.get("maximum_newest_age_hours", 48)),
             request_timeout_seconds=int(scraping.get("request_timeout_seconds", 20)), request_delay_seconds=float(scraping.get("request_delay_seconds", 0.6)),
             user_agent=os.getenv("FEEDSMITH_USER_AGENT", "feedsmith/0.1 (+https://rss.example.com/contact)"),

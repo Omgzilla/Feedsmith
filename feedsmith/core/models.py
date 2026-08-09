@@ -6,7 +6,7 @@ from datetime import datetime
 
 @dataclass(frozen=True)
 class Article:
-    """Public metadata for one article; article bodies are intentionally absent."""
+    """Public article metadata and, when allowed by an adapter, sanitized public content."""
 
     source: str
     external_id: str

@@ -3,11 +3,12 @@ Description=Prune and optimize feedsmith SQLite state
 
 [Service]
 Type=oneshot
+TimeoutStartSec=5min
 User=feedsmith
 Group=feedsmith
 WorkingDirectory=/srv/feedsmith
 EnvironmentFile=/etc/feedsmith/feedsmith.env
-ExecStart=/srv/feedsmith/.venv/bin/feedsmith maintain --config /etc/feedsmith/config.toml
+ExecStart=/usr/bin/flock -n /var/lib/feedsmith/run.lock /srv/feedsmith/.venv/bin/feedsmith maintain --config /etc/feedsmith/config.toml
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

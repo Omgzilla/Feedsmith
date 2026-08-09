@@ -7,6 +7,7 @@ from feedsmith.config import Settings
 from feedsmith.cli import run
 from feedsmith.core.database import Database
 from feedsmith.core.feeds import atom_bytes, rss_bytes
+from feedsmith.core.metrics import write_metrics
 from feedsmith.core.models import Article
 from feedsmith.core.publisher import upload_r2, validate_feed
 
@@ -83,6 +84,16 @@ def test_r2_uses_omni_object_paths_and_correct_content_types(monkeypatch, tmp_pa
     upload_r2(settings, {"omni/rss.xml": b"rss", "omni/atom.xml": b"atom"})
     assert [call["Key"] for call in calls] == ["omni/rss.xml", "omni/atom.xml"]
     assert [call["ContentType"] for call in calls] == ["application/rss+xml; charset=utf-8", "application/atom+xml; charset=utf-8"]
+
+
+def test_metrics_use_a_run_gauge_without_a_misleading_total_suffix(tmp_path: Path):
+    config = tmp_path / "config.toml"
+    config.write_text("[sources.omni]\nenabled = true\n")
+    settings = replace(Settings.from_toml(config), metrics_path=tmp_path / "feedsmith.prom")
+    write_metrics(settings, source="omni", success=True, discovered=3, stored=2, published=2, duration_seconds=1.25)
+    output = settings.metrics_path.read_text()
+    assert "feedsmith_articles_discovered{source=\"omni\"} 3" in output
+    assert "feedsmith_articles_discovered_total" not in output
 
 
 def test_validation_rejects_an_empty_or_stale_feed_before_publish():

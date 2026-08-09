@@ -160,7 +160,7 @@ Do not only pull the source: the systemd services run the package installed in `
 systemctl stop feedsmith-latest.timer feedsmith-full.timer feedsmith-maintenance.timer
 
 git -C /srv/feedsmith pull --ff-only
-/srv/feedsmith/.venv/bin/pip install --upgrade /srv/feedsmith
+/srv/feedsmith/.venv/bin/pip install --no-deps --force-reinstall /srv/feedsmith
 
 systemctl daemon-reload
 systemctl start feedsmith-latest.timer feedsmith-full.timer feedsmith-maintenance.timer

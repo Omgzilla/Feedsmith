@@ -74,8 +74,8 @@ def test_free_article_extracts_public_body_but_premium_article_does_not():
     assert parse_article(premium, "https://omni.se/a/premium").content_html is None
 
 
-def test_canonicalization_removes_tracking_and_fragments_but_preserves_other_query():
-    assert canonicalize_url("https://omni.se/a/a1/?utm_source=x&variant=amp#comments") == "https://omni.se/a/a1?variant=amp"
+def test_canonicalization_removes_all_query_parameters_and_fragments():
+    assert canonicalize_url("https://omni.se/a/a1/?utm_source=x&variant=amp#comments") == "https://omni.se/a/a1"
 
 
 def test_extract_links_deduplicates_on_canonical_url():

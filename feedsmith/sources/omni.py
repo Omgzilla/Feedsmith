@@ -7,7 +7,7 @@ import re
 import time
 from dataclasses import replace
 from datetime import UTC, datetime
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup, NavigableString
@@ -39,7 +39,7 @@ CONTACT_INFORMATION = re.compile(
 
 
 class OmniSource(SourceAdapter):
-    """Omni adapter: public article metadata only, never article-body extraction."""
+    """Omni adapter: public metadata plus free-article public bodies only."""
 
     name = "omni"
 
@@ -154,9 +154,9 @@ def canonicalize_url(value: str) -> str:
     parsed = urlparse(urljoin(OMNI_ORIGIN, value))
     if parsed.netloc == "omni.se" or parsed.netloc.endswith(".omni.se"):
         parsed = parsed._replace(scheme="https", netloc="omni.se", path=parsed.path.rstrip("/"))
-    # Retain meaningful image parameters elsewhere; article tracking query parameters are not identity.
-    query = urlencode([(key, val) for key, val in parse_qsl(parsed.query, keep_blank_values=True) if not key.lower().startswith("utm_") and key.lower() not in {"fbclid", "gclid"}])
-    return urlunparse(parsed._replace(query=query, fragment=""))
+    # Canonical article identity is the path. Image URLs preserve their own query
+    # parameters elsewhere, but no article query parameter may create a duplicate.
+    return urlunparse(parsed._replace(query="", fragment=""))
 
 
 def _first_news_article(soup: BeautifulSoup) -> dict[str, object]:
