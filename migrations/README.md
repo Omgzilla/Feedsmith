@@ -1,3 +1,5 @@
 # Database migrations
 
-The initial schema is created by `feedsmith.core.database.Database` when an empty SQLite database is opened. Future incompatible changes must be added as numbered, forward-only migrations in this directory and applied by the database layer before an existing deployment uses the new schema. Do not rewrite an already released migration.
+Runtime migrations are the numbered SQL files in [`feedsmith/migrations`](../feedsmith/migrations). They are package data, so a wheel or normal `pip install` contains everything needed to upgrade an existing SQLite database.
+
+Add schema changes as a new, forward-only numbered file there and register it in `Database._apply_migrations()`. Test both an empty database and an upgrade from the preceding schema. Never rewrite a migration that has been released.

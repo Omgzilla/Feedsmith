@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from importlib.resources import files
 from pathlib import Path
 
 from .models import Article, FeedFilter
@@ -17,52 +18,35 @@ class Database:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA foreign_keys=ON")
-        self._create_schema()
+        self._apply_migrations()
 
     def close(self) -> None:
         self.connection.close()
 
-    def _create_schema(self) -> None:
-        self.connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS articles (
-                source TEXT NOT NULL,
-                external_id TEXT NOT NULL,
-                canonical_url TEXT NOT NULL,
-                title TEXT NOT NULL,
-                description TEXT,
-                content_html TEXT,
-                image_url TEXT,
-                section TEXT,
-                author TEXT,
-                published_at TEXT,
-                updated_at TEXT,
-                first_seen_at TEXT NOT NULL,
-                last_seen_at TEXT NOT NULL,
-                is_premium INTEGER NOT NULL DEFAULT 0,
-                tags_json TEXT NOT NULL DEFAULT '[]',
-                PRIMARY KEY (source, canonical_url)
-            );
-            CREATE INDEX IF NOT EXISTS articles_ordering
-                ON articles(source, published_at DESC, first_seen_at DESC);
-            CREATE TABLE IF NOT EXISTS runs (
-                id INTEGER PRIMARY KEY,
-                source TEXT NOT NULL,
-                mode TEXT NOT NULL,
-                started_at TEXT NOT NULL,
-                finished_at TEXT,
-                status TEXT NOT NULL,
-                discovered INTEGER NOT NULL DEFAULT 0,
-                stored INTEGER NOT NULL DEFAULT 0,
-                published INTEGER NOT NULL DEFAULT 0,
-                error TEXT
-            );
-            """
-        )
-        columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(articles)")}
-        if "content_html" not in columns:
-            self.connection.execute("ALTER TABLE articles ADD COLUMN content_html TEXT")
+    def _apply_migrations(self) -> None:
+        self.connection.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+        applied = {row["version"] for row in self.connection.execute("SELECT version FROM schema_migrations")}
+        if not applied and self._table_exists("articles"):
+            # Feedsmith releases before migration bookkeeping already used the
+            # initial schema, with public content optionally added in-place.
+            self._mark_migration(1)
+            if "content_html" in self._columns("articles"):
+                self._mark_migration(2)
+            applied = {row["version"] for row in self.connection.execute("SELECT version FROM schema_migrations")}
+        for version, filename in ((1, "001_initial.sql"), (2, "002_public_content.sql"), (3, "003_http_cache.sql")):
+            if version not in applied:
+                self.connection.executescript(files("feedsmith.migrations").joinpath(filename).read_text(encoding="utf-8"))
+                self._mark_migration(version)
         self.connection.commit()
+
+    def _table_exists(self, name: str) -> bool:
+        return self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+    def _columns(self, table: str) -> set[str]:
+        return {row["name"] for row in self.connection.execute(f"PRAGMA table_info({table})")}
+
+    def _mark_migration(self, version: int) -> None:
+        self.connection.execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)", (version, _timestamp()))
 
     def start_run(self, source: str, mode: str) -> int:
         cursor = self.connection.execute(
@@ -119,6 +103,10 @@ class Database:
             "DELETE FROM articles WHERE source=? AND COALESCE(published_at, first_seen_at) < ?",
             (source, cutoff),
         )
+        self.connection.execute(
+            "DELETE FROM http_cache WHERE source=? AND checked_at < ?",
+            (source, cutoff),
+        )
         return cursor.rowcount
 
     def rollback(self) -> None:
@@ -148,6 +136,25 @@ class Database:
             (source, limit),
         ).fetchall()
         return [_article(row) for row in rows]
+
+    def http_cache_headers(self, source: str, url: str) -> dict[str, str]:
+        row = self.connection.execute("SELECT etag, last_modified FROM http_cache WHERE source=? AND url=?", (source, url)).fetchone()
+        if not row:
+            return {}
+        return {key: value for key, value in (("If-None-Match", row["etag"]), ("If-Modified-Since", row["last_modified"])) if value}
+
+    def store_http_cache_headers(self, source: str, url: str, *, etag: str | None, last_modified: str | None) -> None:
+        self.connection.execute(
+            """INSERT INTO http_cache(source, url, etag, last_modified, checked_at) VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(source, url) DO UPDATE SET etag=excluded.etag, last_modified=excluded.last_modified, checked_at=excluded.checked_at""",
+            (source, url, etag, last_modified, _timestamp()),
+        )
+
+    def touch_http_cache(self, source: str, url: str) -> None:
+        self.connection.execute(
+            "UPDATE http_cache SET checked_at=? WHERE source=? AND url=?",
+            (_timestamp(), source, url),
+        )
 
 
 def _article(row: sqlite3.Row) -> Article:

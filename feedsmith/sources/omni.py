@@ -4,7 +4,6 @@ import hashlib
 import html
 import json
 import re
-import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -13,6 +12,7 @@ import requests
 from bs4 import BeautifulSoup, NavigableString
 
 from feedsmith.core.cleanup import compact_text, normalized_text, remove_text_blocks
+from feedsmith.core.http import ConditionalFetcher, HttpCache, NullHttpCache
 from feedsmith.core.models import Article
 from feedsmith.sources.base import SourceAdapter
 
@@ -43,22 +43,24 @@ class OmniSource(SourceAdapter):
 
     name = "omni"
 
-    def __init__(self, *, timeout: int, delay: float, user_agent: str) -> None:
-        self.timeout = timeout
-        self.delay = delay
-        self.session = requests.Session()
-        self.session.headers.update({"User-Agent": user_agent, "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.5"})
+    def __init__(self, *, timeout: int, delay: float, user_agent: str, cache: HttpCache | None = None) -> None:
+        self.fetcher = ConditionalFetcher(source=self.name, cache=cache or NullHttpCache(), timeout=timeout, delay=delay, user_agent=user_agent)
 
     def discover(self, urls: tuple[str, ...], limit_per_url: int) -> list[Article]:
         links: list[str] = []
         for url in urls:
-            for link in extract_article_links(self._get(url), url)[:limit_per_url]:
+            page = self._get(url)
+            if page is None:
+                continue
+            for link in extract_article_links(page, url)[:limit_per_url]:
                 if link not in links:
                     links.append(link)
         articles: list[Article] = []
         for link in links:
             try:
-                articles.append(parse_article(self._get(link), link))
+                page = self._get(link)
+                if page is not None:
+                    articles.append(parse_article(page, link))
             except (ValueError, requests.RequestException) as error:
                 print(f"source=omni event=article_skipped url={link!r} error={error}")
         return articles
@@ -67,13 +69,16 @@ class OmniSource(SourceAdapter):
         return replace(article, description=(clean_teaser(article.description) or None) if article.description else None)
 
     def fetch_article(self, url: str) -> Article:
-        return parse_article(self._get(url), url)
+        page = self._get(url)
+        if page is None:
+            raise ValueError("article is unchanged")
+        return parse_article(page, url)
 
-    def _get(self, url: str) -> str:
-        response = self.session.get(url, timeout=self.timeout)
-        response.raise_for_status()
-        time.sleep(self.delay)
-        return response.text
+    def _get(self, url: str) -> str | None:
+        return self.fetcher.get(url)
+
+
+SOURCE_ADAPTER = OmniSource
 
 
 def extract_article_links(html: str, base_url: str = OMNI_ORIGIN) -> list[str]:

@@ -10,26 +10,21 @@ from feedsmith.core.database import Database
 from feedsmith.core.feeds import atom_bytes, rss_bytes
 from feedsmith.core.metrics import write_metrics
 from feedsmith.core.publisher import atomic_write, upload_r2, validate_feed
-from feedsmith.sources.omni import OmniSource
-
-
-ADAPTERS = {"omni": OmniSource}
+from feedsmith.sources import registry
 
 
 def run(settings: Settings, *, source_name: str, mode: str, upload: bool) -> int:
     source_settings = settings.sources.get(source_name)
     if not source_settings or not source_settings.enabled:
         raise ValueError(f"source {source_name!r} is not enabled")
-    adapter_class = ADAPTERS.get(source_name)
-    if not adapter_class:
-        raise ValueError(f"no adapter is installed for source {source_name!r}")
+    adapter_class = registry.load_adapter(source_name)
     database = Database(settings.database)
     run_id = database.start_run(source_name, mode)
     started = time.monotonic()
     discovered = stored = published = 0
     data_committed = False
     try:
-        adapter = adapter_class(timeout=settings.request_timeout_seconds, delay=settings.request_delay_seconds, user_agent=settings.user_agent)
+        adapter = adapter_class(timeout=settings.request_timeout_seconds, delay=settings.request_delay_seconds, user_agent=settings.user_agent, cache=database)
         if mode == "backfill":
             articles = []
             for existing in database.without_content(source_name, source_settings.max_backfill_articles):

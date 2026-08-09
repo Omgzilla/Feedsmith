@@ -69,7 +69,7 @@ nano /etc/feedsmith/feedsmith.env
 Set these values:
 
 ```ini
-FEEDSMITH_USER_AGENT="feedsmith/1.0 (+mailto:you@example.com)"
+FEEDSMITH_USER_AGENT="feedsmith/1.1 (+mailto:you@example.com)"
 R2_ENDPOINT_URL=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 R2_BUCKET=feedsmith
 R2_ACCESS_KEY_ID=replace-me
@@ -205,3 +205,5 @@ python3 -m venv .venv
 ```
 
 The generic engine lives in `feedsmith/core/`; source-specific scraping and cleanup lives in `feedsmith/sources/`. Adding another source should not require changes to storage, feed rendering, R2 publishing, or scheduling.
+
+To add one, create `feedsmith/sources/your_source.py` with a `SourceAdapter` subclass and export it as `SOURCE_ADAPTER`. Once its `[sources.your_source]` configuration is enabled, the CLI loads it automatically. HTTP validators are stored in SQLite and reused as conditional requests; an unchanged page (`304 Not Modified`) leaves the existing article data and feed intact.

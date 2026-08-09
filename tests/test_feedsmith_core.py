@@ -1,15 +1,20 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+import sqlite3
 from xml.etree import ElementTree as ET
+
+import pytest
 
 from feedsmith.config import Settings
 from feedsmith.cli import run
 from feedsmith.core.database import Database
 from feedsmith.core.feeds import atom_bytes, rss_bytes
+from feedsmith.core.http import ConditionalFetcher
 from feedsmith.core.metrics import write_metrics
 from feedsmith.core.models import Article
 from feedsmith.core.publisher import upload_r2, validate_feed
+from feedsmith.sources.registry import load_adapter
 
 
 def article(**changes) -> Article:
@@ -69,6 +74,74 @@ def test_database_backfill_selects_only_free_articles_without_bodies(tmp_path: P
     database.commit()
     assert [item.canonical_url for item in database.without_content("omni", 10)] == ["https://omni.se/ekonomi/a/a"]
     database.close()
+
+
+def test_migrations_are_recorded_and_upgrade_a_pre_migration_database(tmp_path: Path):
+    path = tmp_path / "state.sqlite3"
+    connection = sqlite3.connect(path)
+    connection.executescript(
+        """CREATE TABLE articles (
+            source TEXT NOT NULL, external_id TEXT NOT NULL, canonical_url TEXT NOT NULL,
+            title TEXT NOT NULL, description TEXT, image_url TEXT, section TEXT, author TEXT,
+            published_at TEXT, updated_at TEXT, first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
+            is_premium INTEGER NOT NULL DEFAULT 0, tags_json TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY (source, canonical_url)
+        );
+        CREATE TABLE runs (id INTEGER PRIMARY KEY, source TEXT NOT NULL, mode TEXT NOT NULL,
+            started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL,
+            discovered INTEGER NOT NULL DEFAULT 0, stored INTEGER NOT NULL DEFAULT 0,
+            published INTEGER NOT NULL DEFAULT 0, error TEXT);
+        """
+    )
+    connection.commit()
+    connection.close()
+    database = Database(path)
+    versions = [row[0] for row in database.connection.execute("SELECT version FROM schema_migrations ORDER BY version")]
+    columns = {row[1] for row in database.connection.execute("PRAGMA table_info(articles)")}
+    assert versions == [1, 2, 3]
+    assert "content_html" in columns
+    assert database.connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='http_cache'").fetchone()
+    database.close()
+
+
+def test_conditional_fetcher_reuses_etag_and_skips_unchanged_response(monkeypatch):
+    class Cache:
+        def __init__(self):
+            self.headers = {}
+            self.touched = []
+        def http_cache_headers(self, source, url):
+            return self.headers
+        def store_http_cache_headers(self, source, url, *, etag, last_modified):
+            self.headers = {"If-None-Match": etag, "If-Modified-Since": last_modified}
+        def touch_http_cache(self, source, url):
+            self.touched.append((source, url))
+    class Response:
+        def __init__(self, status, text="", headers=None):
+            self.status_code, self.text, self.headers = status, text, headers or {}
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError("bad response")
+    class Session:
+        def __init__(self):
+            self.calls = []
+            self.headers = {}
+        def get(self, url, headers, timeout):
+            self.calls.append(headers)
+            return Response(200, "page", {"ETag": '"v1"', "Last-Modified": "Mon, 01 Jan 2024 00:00:00 GMT"}) if len(self.calls) == 1 else Response(304)
+    cache = Cache()
+    fetcher = ConditionalFetcher(source="omni", cache=cache, timeout=1, delay=0, user_agent="test")
+    session = Session()
+    object.__setattr__(fetcher, "session", session)
+    assert fetcher.get("https://omni.se/senaste") == "page"
+    assert fetcher.get("https://omni.se/senaste") is None
+    assert session.calls == [{}, {"If-None-Match": '"v1"', "If-Modified-Since": "Mon, 01 Jan 2024 00:00:00 GMT"}]
+    assert cache.touched == [("omni", "https://omni.se/senaste")]
+
+
+def test_registry_loads_source_module_without_cli_registration():
+    assert load_adapter("omni").__name__ == "OmniSource"
+    with pytest.raises(ValueError, match="no adapter"):
+        load_adapter("not_installed")
 
 
 def test_r2_uses_omni_object_paths_and_correct_content_types(monkeypatch, tmp_path: Path):
@@ -135,7 +208,7 @@ homepage_url = \"https://omni.se/senaste\"
             pass
         def discover(self, urls, limit):
             return [article()]
-    monkeypatch.setitem(__import__("feedsmith.cli", fromlist=["ADAPTERS"]).ADAPTERS, "omni", OneArticleAdapter)
+    monkeypatch.setattr("feedsmith.cli.registry.load_adapter", lambda name: OneArticleAdapter)
     settings = Settings.from_toml(config)
     assert run(settings, source_name="omni", mode="latest", upload=False) == 1
     database = Database(tmp_path / "state.sqlite3")
