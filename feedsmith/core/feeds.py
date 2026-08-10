@@ -93,14 +93,23 @@ def _author(parent: ET.Element, name: str, *, namespace: str) -> None:
 
 
 def _html_description(article: Article) -> str:
-    image = f'<img src="{html.escape(article.image_url, quote=True)}" alt="" loading="lazy" />' if article.image_url else ""
+    image = _image_html(article)
     text = html.escape(article.description or "")
     return f"{image}<p>{text}</p>" if text else image
 
 
 def _article_html(article: Article) -> str:
-    image = f'<img src="{html.escape(article.image_url, quote=True)}" alt="" loading="lazy" />' if article.image_url else ""
+    image = _image_html(article)
     return f"{image}{article.content_html}" if article.content_html else _html_description(article)
+
+
+def _image_html(article: Article) -> str:
+    if not article.image_url:
+        return ""
+    image = f'<img src="{html.escape(article.image_url, quote=True)}" alt="" loading="lazy" />'
+    if not article.image_caption:
+        return image
+    return f"<figure>{image}<figcaption>{html.escape(article.image_caption)}</figcaption></figure>"
 
 
 def _image_type(url: str) -> str:

@@ -122,7 +122,7 @@ systemctl list-timers 'feedsmith-*'
 
 That is it. Add `https://rss.example.com/omni/rss.xml` to your reader. In [ReadYou](https://github.com/ReadYouApp/ReadYou), **do not select “Parse full content”** when adding this feed: Feedsmith already provides the cleaned public article content in the feed itself. That option fetches Omni’s original webpage and will show Omni’s own page UI and advertising.
 
-If you are upgrading from a metadata-only Feedsmith release, run this one-off backfill after installing the updated systemd unit. It fetches public bodies for existing free articles and republishes the feeds; it never fetches Omni Mer bodies:
+If you are upgrading from a metadata-only release, or a release before lead-image captions, run this one-off backfill after installing the updated systemd unit. It fills missing public bodies and lead-image captions, then republishes the feeds. It never stores Omni Mer article bodies:
 
 ```bash
 systemctl start feedsmith-backfill.service
@@ -190,7 +190,7 @@ Future filtered feeds reuse the same SQLite data. Enable them under `[sources.om
 
 ## Omni behavior and limits
 
-The Omni adapter reads public metadata plus the public body of free articles: title, teaser, public body, URL, time, category, author, tags, premium status, and hotlinked Omni image URL. It does not fetch subscriber-only bodies or download images.
+The Omni adapter reads public metadata plus the public body of free articles: title, teaser, public body, URL, time, category, author, tags, premium status, hotlinked Omni image URL, and the visible caption/credit for that lead image. It does not fetch subscriber-only bodies or download images.
 
 Premium stories stay in the feed with their unchanged titles, public teasers, and a `Premium` category; their subscriber-only bodies are never included. Known Omni Mer promotional blocks and Omni’s contact-information UI are removed by the Omni adapter only.
 

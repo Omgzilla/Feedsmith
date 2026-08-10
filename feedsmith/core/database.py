@@ -33,7 +33,12 @@ class Database:
             if "content_html" in self._columns("articles"):
                 self._mark_migration(2)
             applied = {row["version"] for row in self.connection.execute("SELECT version FROM schema_migrations")}
-        for version, filename in ((1, "001_initial.sql"), (2, "002_public_content.sql"), (3, "003_http_cache.sql")):
+        for version, filename in (
+            (1, "001_initial.sql"),
+            (2, "002_public_content.sql"),
+            (3, "003_http_cache.sql"),
+            (4, "004_image_caption.sql"),
+        ):
             if version not in applied:
                 self.connection.executescript(files("feedsmith.migrations").joinpath(filename).read_text(encoding="utf-8"))
                 self._mark_migration(version)
@@ -68,16 +73,17 @@ class Database:
         self.connection.execute(
             """
             INSERT INTO articles (
-                source, external_id, canonical_url, title, description, content_html, image_url,
+                source, external_id, canonical_url, title, description, content_html, image_url, image_caption,
                 section, author, published_at, updated_at, first_seen_at, last_seen_at,
                 is_premium, tags_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source, canonical_url) DO UPDATE SET
                 external_id=excluded.external_id,
                 title=excluded.title,
                 description=COALESCE(excluded.description, articles.description),
                 content_html=COALESCE(excluded.content_html, articles.content_html),
                 image_url=COALESCE(excluded.image_url, articles.image_url),
+                image_caption=COALESCE(excluded.image_caption, articles.image_caption),
                 section=COALESCE(excluded.section, articles.section),
                 author=COALESCE(excluded.author, articles.author),
                 published_at=COALESCE(excluded.published_at, articles.published_at),
@@ -88,7 +94,7 @@ class Database:
             """,
             (
                 article.source, article.external_id, article.canonical_url, article.title,
-                article.description, article.content_html, article.image_url, article.section, article.author,
+                article.description, article.content_html, article.image_url, article.image_caption, article.section, article.author,
                 _datetime(article.published_at), _datetime(article.updated_at), now, now,
                 int(article.is_premium), json.dumps(article.tags, ensure_ascii=False),
             ),
@@ -137,6 +143,17 @@ class Database:
         ).fetchall()
         return [_article(row) for row in rows]
 
+    def needing_backfill(self, source: str, limit: int) -> list[Article]:
+        """Articles whose public body or lead-image caption has not been stored yet."""
+        rows = self.connection.execute(
+            """SELECT * FROM articles WHERE source=? AND (
+                   (is_premium=0 AND content_html IS NULL)
+                   OR (image_url IS NOT NULL AND image_caption IS NULL)
+               ) ORDER BY COALESCE(published_at, first_seen_at) DESC, first_seen_at DESC LIMIT ?""",
+            (source, limit),
+        ).fetchall()
+        return [_article(row) for row in rows]
+
     def http_cache_headers(self, source: str, url: str) -> dict[str, str]:
         row = self.connection.execute("SELECT etag, last_modified FROM http_cache WHERE source=? AND url=?", (source, url)).fetchone()
         if not row:
@@ -163,7 +180,7 @@ def _article(row: sqlite3.Row) -> Article:
         title=row["title"], description=row["description"], content_html=row["content_html"], image_url=row["image_url"],
         section=row["section"], author=row["author"], published_at=_parse_datetime(row["published_at"]),
         updated_at=_parse_datetime(row["updated_at"]), is_premium=bool(row["is_premium"]),
-        tags=tuple(json.loads(row["tags_json"])),
+        tags=tuple(json.loads(row["tags_json"])), image_caption=row["image_caption"],
     )
 
 

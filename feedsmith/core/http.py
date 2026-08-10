@@ -39,11 +39,11 @@ class ConditionalFetcher:
         session.headers.update({"User-Agent": self.user_agent, "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.5"})
         object.__setattr__(self, "session", session)
 
-    def get(self, url: str) -> str | None:
-        headers = self.cache.http_cache_headers(self.source, url)
+    def get(self, url: str, *, conditional: bool = True) -> str | None:
+        headers = self.cache.http_cache_headers(self.source, url) if conditional else {}
         response = self.session.get(url, headers=headers, timeout=self.timeout)
         try:
-            if response.status_code == requests.codes.not_modified:
+            if conditional and response.status_code == requests.codes.not_modified:
                 self.cache.touch_http_cache(self.source, url)
                 return None
             response.raise_for_status()

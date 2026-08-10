@@ -1,5 +1,5 @@
 [Unit]
-Description=Backfill public Omni article bodies and publish Feedsmith feeds
+Description=Backfill public Omni article bodies and image captions, then publish Feedsmith feeds
 Wants=network-online.target
 After=network-online.target
 

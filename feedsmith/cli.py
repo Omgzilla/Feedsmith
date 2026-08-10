@@ -27,7 +27,7 @@ def run(settings: Settings, *, source_name: str, mode: str, upload: bool) -> int
         adapter = adapter_class(timeout=settings.request_timeout_seconds, delay=settings.request_delay_seconds, user_agent=settings.user_agent, cache=database)
         if mode == "backfill":
             articles = []
-            for existing in database.without_content(source_name, source_settings.max_backfill_articles):
+            for existing in database.needing_backfill(source_name, source_settings.max_backfill_articles):
                 try:
                     articles.append(adapter.fetch_article(existing.canonical_url))
                 except Exception as error:

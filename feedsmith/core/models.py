@@ -21,6 +21,7 @@ class Article:
     is_premium: bool
     content_html: str | None = None
     tags: tuple[str, ...] = ()
+    image_caption: str | None = None
 
 
 @dataclass(frozen=True)

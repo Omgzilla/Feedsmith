@@ -88,3 +88,14 @@ def test_srcset_chooses_highest_resolution_omni_image_with_parameters():
     <body><img srcset='https://images.omni.se/a.jpg?width=320 320w, https://images.omni.se/a.jpg?width=1600&quality=80 1600w'></body></html>"""
     article = parse_article(html, "https://omni.se/a/a1")
     assert article.image_url == "https://images.omni.se/a.jpg?width=1600&quality=80"
+
+
+def test_lead_image_caption_is_extracted_without_using_an_unrelated_figure():
+    html = """<html><head><meta property='og:title' content='Story'><meta property='og:url' content='https://omni.se/a/a1'></head>
+    <body><article>
+      <figure><img srcset='https://images.omni.se/lead.jpg?width=600 600w, https://images.omni.se/lead.jpg?width=1600 1600w'>
+        <figcaption>Lead image <strong>credit</strong> (TT)</figcaption></figure>
+      <figure><img src='https://images.omni.se/other.jpg?width=600'><figcaption>Unrelated caption</figcaption></figure>
+    </article></body></html>"""
+    article = parse_article(html, "https://omni.se/a/a1")
+    assert article.image_caption == "Lead image credit (TT)"

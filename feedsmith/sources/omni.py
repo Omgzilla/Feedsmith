@@ -69,13 +69,15 @@ class OmniSource(SourceAdapter):
         return replace(article, description=(clean_teaser(article.description) or None) if article.description else None)
 
     def fetch_article(self, url: str) -> Article:
-        page = self._get(url)
+        # Backfills request the current public page even when a prior discovery
+        # cached validators before a newly supported field was introduced.
+        page = self._get(url, conditional=False)
         if page is None:
             raise ValueError("article is unchanged")
         return parse_article(page, url)
 
-    def _get(self, url: str) -> str | None:
-        return self.fetcher.get(url)
+    def _get(self, url: str, *, conditional: bool = True) -> str | None:
+        return self.fetcher.get(url, conditional=conditional)
 
 
 SOURCE_ADAPTER = OmniSource
@@ -113,7 +115,7 @@ def parse_article(html: str, discovered_url: str) -> Article:
         image_url=image, section=compact_text(section) if section else None,
         author=(compact_text(author) or None) if author else None, published_at=_parse_datetime(_value(data, "datePublished") or _meta(soup, "article:published_time")),
         updated_at=_parse_datetime(_value(data, "dateModified") or _meta(soup, "article:modified_time")),
-        is_premium=premium, tags=tags,
+        is_premium=premium, tags=tags, image_caption=_image_caption(soup, image),
     )
 
 
@@ -259,6 +261,37 @@ def _best_image(soup: BeautifulSoup, fallback: str | None) -> str | None:
             candidate = candidates[-1][0]
             break
     return _omni_image_url(candidate)
+
+
+def _image_caption(soup: BeautifulSoup, image_url: str | None) -> str | None:
+    """Return the visible caption for the selected lead image, if Omni provides one."""
+    if not image_url:
+        return None
+    target = _image_identity(image_url)
+    if not target:
+        return None
+    for figure in soup.select("figure"):
+        image = figure.find("img")
+        if not image or _image_identity(_tag_image_url(image)) != target:
+            continue
+        caption = figure.find("figcaption")
+        if caption:
+            value = compact_text(caption.get_text(" ", strip=True))
+            return value or None
+    return None
+
+
+def _tag_image_url(tag) -> str | None:
+    candidates = _srcset_candidates(tag.get("srcset", ""))
+    return _omni_image_url(candidates[-1][0] if candidates else tag.get("src"))
+
+
+def _image_identity(value: str | None) -> tuple[str, str] | None:
+    url = _omni_image_url(value)
+    if not url:
+        return None
+    parsed = urlparse(url)
+    return parsed.netloc, parsed.path
 
 
 def _srcset_candidates(value: str) -> list[tuple[str, int]]:

@@ -43,23 +43,26 @@ def test_rss_and_atom_have_premium_and_multiple_image_forms():
 
 
 def test_full_content_is_emitted_in_rss_and_atom():
-    item = article(content_html="<p>Full public article text.</p>")
+    item = article(content_html="<p>Full public article text.</p>", image_caption="A & B / TT")
     rss = rss_bytes([item], feed_url="https://rss.example.com/omni/rss.xml", source_title="Omni", source_url="https://omni.se/senaste")
     atom = atom_bytes([item], feed_url="https://rss.example.com/omni/atom.xml", source_title="Omni", source_url="https://omni.se/senaste")
     rss_root = ET.fromstring(rss)
     atom_root = ET.fromstring(atom)
     assert "Full public article text." in rss_root.find(".//{http://purl.org/rss/1.0/modules/content/}encoded").text
     assert "Full public article text." in atom_root.find(".//{http://www.w3.org/2005/Atom}content").text
+    assert "<figcaption>A &amp; B / TT</figcaption>" in rss_root.find(".//{http://purl.org/rss/1.0/modules/content/}encoded").text
+    assert "<figcaption>A &amp; B / TT</figcaption>" in atom_root.find(".//{http://www.w3.org/2005/Atom}content").text
 
 
 def test_database_preserves_existing_metadata_when_new_scrape_is_missing(tmp_path: Path):
     database = Database(tmp_path / "state.sqlite3")
-    database.upsert(article())
-    database.upsert(article(description=None, image_url=None, section=None, published_at=None))
+    database.upsert(article(image_caption="Photo credit"))
+    database.upsert(article(description=None, image_url=None, image_caption=None, section=None, published_at=None))
     database.commit()
     stored = database.latest("omni", 10)[0]
     assert stored.description == "Teaser"
     assert stored.image_url == "https://images.omni.se/a.jpg?width=1200"
+    assert stored.image_caption == "Photo credit"
     assert stored.section == "Ekonomi"
     assert stored.published_at is not None
     assert stored.is_premium is True
@@ -73,6 +76,18 @@ def test_database_backfill_selects_only_free_articles_without_bodies(tmp_path: P
     database.upsert(article(external_id="body", canonical_url="https://omni.se/a/body", is_premium=False, content_html="<p>Stored</p>"))
     database.commit()
     assert [item.canonical_url for item in database.without_content("omni", 10)] == ["https://omni.se/ekonomi/a/a"]
+    database.close()
+
+
+def test_database_backfill_includes_articles_missing_an_image_caption(tmp_path: Path):
+    database = Database(tmp_path / "state.sqlite3")
+    database.upsert(article(is_premium=False, content_html="<p>Stored</p>", image_caption=None))
+    database.upsert(article(external_id="caption", canonical_url="https://omni.se/a/caption", is_premium=True, content_html=None, image_caption=None))
+    database.upsert(article(external_id="complete", canonical_url="https://omni.se/a/complete", is_premium=False, content_html="<p>Stored</p>", image_caption="Caption"))
+    database.commit()
+    assert [item.canonical_url for item in database.needing_backfill("omni", 10)] == [
+        "https://omni.se/a/caption", "https://omni.se/ekonomi/a/a",
+    ]
     database.close()
 
 
@@ -98,8 +113,9 @@ def test_migrations_are_recorded_and_upgrade_a_pre_migration_database(tmp_path: 
     database = Database(path)
     versions = [row[0] for row in database.connection.execute("SELECT version FROM schema_migrations ORDER BY version")]
     columns = {row[1] for row in database.connection.execute("PRAGMA table_info(articles)")}
-    assert versions == [1, 2, 3]
+    assert versions == [1, 2, 3, 4]
     assert "content_html" in columns
+    assert "image_caption" in columns
     assert database.connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='http_cache'").fetchone()
     database.close()
 
