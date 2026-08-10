@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "feedsmith"
-version = "1.1.0"
+version = "1.1.1"
 description = "Generic self-hosted RSS and Atom publisher for public web metadata"
 requires-python = ">=3.11"
 dependencies = [
